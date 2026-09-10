@@ -105,57 +105,10 @@ def export(name):
     for o in active:o['asset']=name;o.hide_set(True)
     active.clear()
 
-# Continuous sculpted body, with a real recessed, open cockpit.
-verts=[];faces=[];rings=40;segs=64
-for j in range(rings+1):
-    t=j/rings; y=-2.32+t*4.62
-    end=math.sin(math.pi*t)**.16
-    width=(1.23+.04*math.cos((t-.2)*math.pi*2))*end+.035
-    z=.95+.045*t
-    for k in range(segs):
-        a=2*math.pi*k/segs
-        verts.append((width*math.copysign(abs(math.cos(a))**.72,math.cos(a)),y,z+.47*math.sin(a)*end))
-for j in range(rings):
-    for k in range(segs):
-        a=j*segs+k;b=j*segs+(k+1)%segs
-        faces.append((a,b,b+segs,a+segs))
-faces += [tuple(reversed(range(segs))),tuple(rings*segs+k for k in range(segs))]
-body=mesh('Body_Pearl',verts,faces,pearl)
-bm=bmesh.new();bm.from_mesh(body.data);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(body.data);bm.free()
-for p in body.data.polygons:p.use_smooth=True
-for wy in [-1.43,1.46]:
-    for side in [-1,1]:
-        arch=cyl('Wheel arch cutter',(side*1.22,wy,.53),.59,.74,None,64);arch.rotation_euler.y=math.pi/2
-        bpy.context.view_layer.objects.active=body;mod=body.modifiers.new('Sculpted wheel arch','BOOLEAN');mod.object=arch;mod.operation='DIFFERENCE';bpy.ops.object.modifier_apply(modifier=mod.name)
-        active.remove(arch);bpy.data.objects.remove(arch,do_unlink=True)
-cut=uv('Cockpit cutting volume',(0,.4,1.53),(.77,1.03,.64),None)
-bpy.context.view_layer.objects.active=cut;bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
-bpy.context.view_layer.objects.active=body;mod=body.modifiers.new('Open cockpit','BOOLEAN');mod.object=cut;mod.operation='DIFFERENCE';bpy.ops.object.modifier_apply(modifier=mod.name)
-active.remove(cut);bpy.data.objects.remove(cut,do_unlink=True)
-bevel=body.modifiers.new('Polished arch edges','BEVEL');bevel.width=.023;bevel.segments=3
-uv('Recessed cockpit liner',(0,.42,1.13),(.72,.96,.17),carbon)
-seat=cube('Saddle leather seat',(0,.78,1.28),(.77,.2,.63),carbon,.13);seat.rotation_euler.x=-.17
-cube('Front lower intake',(0,-2.18,.71),(1.22,.12,.18),carbon,.085)
-cube('Rear diffuser',(0,2.11,.63),(1.39,.13,.16),carbon,.055)
-for s in [-1,1]:
-    lamp=uv('Headlight_ice',(.78*s,-1.98,1.27),(.25,.045,.048),blue)
-    lamp.rotation_euler.z=s*.28
-    uv('Tail_light',(.8*s,2,1.26),(.25,.05,.042),red)
-    cube('Sill_trim',(1.03*s,.05,.56),(.05,2.13,.09),carbon,.025)
-    uv('Mirror_shell',(1.18*s,-.5,1.24),(.14,.18,.075),pearl)
-for y,label in [(-1.43,'F'),(1.46,'R')]:
-    for s,side in [(-1,'L'),(1,'R')]:
-        start=len(active); center=Vector((1.16*s,y,.53))
-        torus('Tire',center,.395,.14,rubber,(0,math.pi/2,0))
-        o=cyl('Rim',center+Vector((s*.116,0,0)),.355,.045,rim,48);o.rotation_euler.y=math.pi/2
-        o=cyl('Brake_disc',center+Vector((s*.14,0,0)),.265,.02,brake,48);o.rotation_euler.y=math.pi/2
-        for k in range(7):
-            a=k*math.tau/7
-            link('Sculpted_spoke',center+Vector((s*.168,.07*math.cos(a),.07*math.sin(a))),center+Vector((s*.168,.32*math.cos(a+.15),.32*math.sin(a+.15))),.027,rim)
-        o=cyl('Hub',center+Vector((s*.19,0,0)),.09,.025,carbon);o.rotation_euler.y=math.pi/2
-        wheel=bpy.data.objects.new('Wheel_'+label+side,None);scene.collection.objects.link(wheel);wheel.location=center
-        for o in active[start:]:o.parent=wheel;o.location-=center
-        active.append(wheel)
+# Reference roadster; the same builder supports car-only updates.
+import runpy
+roadster = runpy.run_path(ROOT + '/blender/roadster.py')
+active.extend(roadster['build_roadster'](scene))
 # Cotton-top tamarin: dark face, white swept crown, articulated limbs, curled tail.
 uv('Driver_torso',(0,.51,1.54),(.34,.26,.44),fur)
 uv('Cream_chest',(0,.269,1.6),(.225,.04,.3),mane)
@@ -184,9 +137,6 @@ for s in [-1,1]:
     uv('Gripping_hand',hand,(.095,.081,.079),face)
     for f in range(3):uv('Fingers',(s*(.26+f*.023),-.333,1.53),(.018,.039,.027),face,16,10)
 curve('Curled_tail',[(.15,.78,1.33),(.44,1.02,1.42),(.47,1.44,1.63),(.08,1.64,1.7),(-.12,1.44,1.62)],.085,fur)
-torus('Steering_wheel',(0,-.29,1.47),.325,.037,carbon,(math.radians(68),0,0))
-link('Steering_column',(0,-.23,1.24),(0,-.29,1.47),.055,carbon)
-for s in [-1,1]:link('Wheel_spoke',(0,-.3,1.47),(s*.29,-.3,1.53),.022,metal)
 export('saguinus-roadster')
 
 # Hand shaped palm, with broad, segmented leaf blades.

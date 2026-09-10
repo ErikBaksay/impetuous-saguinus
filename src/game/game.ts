@@ -21,7 +21,7 @@ export class DrivingGame {
   private keys = new Set<string>(); private frameId = 0; private previousTime = 0; private totalTime = 0;
   private raceTime = 0; private lapStartTime = 0; private countdownTime = 3; private lastCount = 3;
   private savedPhase: GamePhase = 'driving'; private bestLap: number | null = null; private hudTimer = 0;
-  private cameraStyle = 0; private look = new T.Vector3(); private wheels: T.Object3D[] = [];
+  private cameraStyle = 0; private look = new T.Vector3(); private wheelPivots: T.Object3D[] = []; private wheelSpins: T.Object3D[] = []; private wheelAngle = 0;
   private disposed = false; private gamepadPause = false; private gamepadReset = false;
   private readonly sparksGeo = new T.BufferGeometry(); private readonly sparksPos = new Float32Array(240 * 3);
   private readonly sparksLife = new Float32Array(240); private readonly sparksVelocity = new Float32Array(240 * 3);
@@ -47,7 +47,7 @@ export class DrivingGame {
       this.composer.addPass(new OutputPass()); this.resizeObserver.observe(this.host); this.resize();
       this.world = await createWorld(this.scene, this.renderer, this.track, n => { this.state.loading = Math.round(n * 100); this.publish(); });
       if (this.disposed) { this.world.dispose(); return; }
-      this.world.player.traverse(o => { if (/^Wheel_[FR][LR]$/.test(o.name)) this.wheels.push(o); });
+      this.world.player.traverse(o => { if (/^Wheel_[FR][LR]$/.test(o.name)) this.wheelPivots.push(o); if (/^WheelSpin_[FR][LR]$/.test(o.name)) this.wheelSpins.push(o); });
       this.sparksPos.fill(-10000); this.sparksGeo.setAttribute('position', new T.BufferAttribute(this.sparksPos, 3));
       this.sparkMesh = new T.Points(this.sparksGeo, new T.PointsMaterial({ color: 0x66dfff, size: .115, transparent: true, opacity: .95, blending: T.AdditiveBlending, depthWrite: false })); this.sparkMesh.frustumCulled = false; this.scene.add(this.sparkMesh);
       this.state.phase = 'menu'; this.syncPlayer(); this.updateCamera(1, true); this.publish(); this.frameId = requestAnimationFrame(this.frame);
@@ -56,7 +56,7 @@ export class DrivingGame {
     }
   }
   start(mode: GameMode): void {
-    if (!this.world) return; this.audio.start(); this.keys.clear(); this.car.reset(0); this.laps.reset(); this.raceTime = this.lapStartTime = 0; this.countdownTime = 3.5; this.lastCount = 4;
+    if (!this.world) return; this.audio.start(); this.keys.clear(); this.car.reset(0); this.laps.reset(); this.raceTime = this.lapStartTime = this.wheelAngle = 0; this.countdownTime = 3.5; this.lastCount = 4;
     this.state = { ...this.state, mode, phase: mode === 'trial' ? 'countdown' : 'driving', laps: [], lap: 1, time: '00:00.00', lapTime: '00:00.00', speed: 0, countdown: 3, wrongWay: false, boost: false, drift: 0 };
     this.syncPlayer(); this.updateCamera(1, true); this.publish();
   }
@@ -105,6 +105,7 @@ export class DrivingGame {
       const left = this.keys.has('KeyA') || this.keys.has('ArrowLeft'), right = this.keys.has('KeyD') || this.keys.has('ArrowRight');
       const axis = pad && Math.abs(pad.axes[0]) > .1 ? pad.axes[0] : 0;
       this.car.step({ throttle: Math.max(up ? 1 : 0, pad?.buttons[7]?.value ?? 0), brake: Math.max(down ? 1 : 0, pad?.buttons[6]?.value ?? 0), steer: left ? -1 : right ? 1 : axis, drift: this.keys.has('Space') || !!pad?.buttons[0]?.pressed }, dt);
+      this.wheelAngle = (this.wheelAngle + this.car.speed * dt / .53) % (Math.PI * 2);
       this.raceTime += dt;
       const tangent = this.track.tangent(this.car.progress), movingForward = this.car.speed > 0 && Math.sin(this.car.heading) * tangent.x + Math.cos(this.car.heading) * tangent.z > 0;
       if (this.state.mode === 'trial' && this.laps.sample(this.car.progress, movingForward)) {
@@ -127,7 +128,8 @@ export class DrivingGame {
   private syncPlayer(): void {
     if (!this.world) return; this.world.player.position.set(this.car.x, this.car.y, this.car.z); this.world.player.rotation.set(0, this.car.heading, this.car.steering * this.car.speed * .0008);
     const tangent = this.track.tangent(this.car.progress); this.world.player.rotation.x = -Math.asin(tangent.y);
-    for (const wheel of this.wheels) { wheel.rotation.x = this.raceTime * this.car.speed / .53; if (wheel.name.includes('_F')) wheel.rotation.y = -this.car.steering * .3; }
+    for (const pivot of this.wheelPivots) if (pivot.name.includes('_F')) pivot.rotation.y = -this.car.steering * .3;
+    for (const wheel of this.wheelSpins) wheel.rotation.x = this.wheelAngle;
   }
   private updateCamera(dt: number, instant = false): void {
     const p = new T.Vector3(this.car.x, this.car.y, this.car.z), target = p.clone(); let desired: T.Vector3;

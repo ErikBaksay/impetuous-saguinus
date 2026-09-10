@@ -28,6 +28,8 @@ Time trials require ordered quarter-course checkpoints and three forward laps. Y
 - `src/game/audio.ts`: synthesized drivetrain, wind and surf.
 - `src/app.component.*` and `src/styles.css`: Angular interface.
 - `blender/build_assets.py`: reproducible Blender asset authoring script.
+- `blender/roadster.py`: reference-based pearl roadster, with a sculpted shell, recessed cockpit, five-spoke wheels and LED lights.
+- `blender/preview_roadster.py`: studio render of the car without the game driver, saved to `blender/previews/roadster.png`.
 - `blender/impetuous-saguinus.blend`: editable source asset atelier.
 - `public/models/`: nine original Blender GLB assets, including the driver and roadster.
 
@@ -36,6 +38,16 @@ The script creates its own named scene and preserves unrelated Blender scenes. C
 ```python
 exec(compile(open('/absolute/project/path/blender/build_assets.py').read(), 'build_assets.py', 'exec'))
 ```
+
+To rebuild only the car in the open project atelier, preserving the driver and scenery:
+
+```python
+import runpy
+root = '/absolute/project/path'
+runpy.run_path(root + '/blender/roadster.py')['update_atelier'](root)
+```
+
+The game loads `public/models/saguinus-roadster.glb`. Its four `Wheel_FL/FR/RL/RR` nodes steer; their `WheelSpin_FL/FR/RL/RR` children roll independently at a 0.53 m tire radius. Blender uses Z up and −Y forward; GLB export converts this to the game's Y up and +Z forward. The editable `Roadster • Studio` scene is excluded from the game export.
 
 ## Verification
 
