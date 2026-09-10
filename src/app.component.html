@@ -1,0 +1,51 @@
+<main class="game-shell" [class.racing]="state().phase === 'driving' || state().phase === 'countdown'" [class.boosting]="state().boost && state().phase === 'driving'">
+  <div #viewport class="viewport"></div>
+  <div class="film-shade" aria-hidden="true"></div>
+  <header class="topbar">
+    <button class="wordmark" aria-label="Return to main menu" (click)="game?.menu()" [disabled]="state().phase === 'loading'">
+      <span class="brand-monogram">IS<span>↗</span></span><span>IMPETUOUS<br>SAGUINUS</span>
+    </button>
+    <div class="top-location"><span class="live-dot"></span> RIVIERA RUN <span class="top-divider">/</span> GOLDEN HOUR</div>
+    <div class="top-actions">
+      <button class="icon-button" (click)="game?.toggleAudio()" [attr.aria-label]="state().muted ? 'Enable sound' : 'Mute sound'" [attr.title]="state().muted ? 'Enable sound (M)' : 'Mute sound (M)'">
+        @if (state().muted) { <span aria-hidden="true">♪</span><span class="mute-slash" aria-hidden="true">/</span> } @else { <span aria-hidden="true">♫</span> }
+      </button>
+      <button class="icon-button fullscreen" aria-label="Toggle full screen" title="Full screen" (click)="fullscreen()"><span aria-hidden="true">⛶</span></button>
+      @if (state().phase === 'driving' || state().phase === 'countdown' || state().phase === 'paused') { <button class="icon-button" aria-label="Pause or resume game" title="Pause (Esc)" (click)="pause()"><span aria-hidden="true">Ⅱ</span></button> }
+    </div>
+  </header>
+
+  @if (state().phase === 'loading') {
+    <section class="loading-screen" aria-live="polite"><span class="eyebrow">A LITTLE FURTHER, EACH TIME</span><h1>Your coast<br>is calling.</h1><div class="load-track"><div [style.width.%]="state().loading"></div></div><p>Opening the Riviera <span>{{state().loading}}%</span></p></section>
+  }
+  @if (state().phase === 'menu') {
+    <section class="menu-panel">
+      <div class="edition"><span>01</span><div></div> THE RIVIERA COLLECTION</div>
+      <p class="eyebrow">SMALL DRIVER. BIGGER DAYS.</p>
+      <h1>A little wild.<br><em>A world away.</em></h1>
+      <p class="menu-description">Follow the coast. Find your rhythm.<br>Make every corner a little more yours.</p>
+      <div class="menu-choices">
+        <button class="drive-button primary" (click)="start('trial')"><span class="button-number">01</span><span><strong>Time trial</strong><small>Three laps. Your perfect line.</small></span><span class="button-arrow" aria-hidden="true">↗</span></button>
+        <button class="drive-button secondary" (click)="start('free')"><span class="button-number">02</span><span><strong>Free drive</strong><small>No clock to beat. Just the coast.</small></span><span class="button-arrow" aria-hidden="true">↗</span></button>
+      </div>
+      <button class="text-button controls-link" (click)="controls.set(true)"><span class="keycap">?</span> How to drive <span aria-hidden="true">↗</span></button>
+    </section>
+    <aside class="destination-card"><span class="eyebrow">YOUR NEXT GOOD DRIVE</span><h2>Porto Sole, Riviera</h2><div><span>Coastal circuit</span><span>{{game ? (game.track.length / 1000).toFixed(2) : '0.88'}} km</span><span>Sunset</span></div></aside>
+    <footer class="menu-footer"><span>RACE. EXPLORE. EXHALE.</span><span>ORIGINAL WORLD <span class="footer-dot">·</span> FIRST PLAYABLE</span></footer>
+  }
+
+  <div class="race-hud" [class.visible]="state().phase === 'driving' || state().phase === 'countdown'">
+    <section class="lap-display" aria-label="Race progress"><span class="eyebrow">{{state().mode === 'trial' ? 'LAP' : 'FREE DRIVE'}}</span>@if (state().mode === 'trial') {<div class="lap-number">{{state().lap}}<span>/ 3</span></div>} @else {<div class="free-label">Take the<br>long way.</div>}<div class="sector-name"><span class="live-dot"></span>{{state().sector}}</div></section>
+    @if (state().mode === 'trial') { <section class="timing"><span class="eyebrow">TOTAL TIME</span><strong>{{state().time}}</strong><div><span>THIS LAP</span><span>{{state().lapTime}}</span></div><div><span>PERSONAL BEST</span><span>{{state().best}}</span></div></section> }
+    <section class="minimap-wrap"><canvas #minimap width="320" height="270" aria-label="Course minimap showing your position"></canvas><span>RIVIERA RUN</span></section>
+    <div class="drive-hint"><span class="keycap">W A S D</span> DRIVE <span class="hint-divider"></span><span class="keycap">SPACE</span> DRIFT <span class="hint-divider"></span><span class="keycap">R</span> RESET</div>
+    <section class="speed-display"><div class="speed-value">{{state().speed}}<span>KM/H</span></div><div class="speed-rule"><div [style.width.%]="state().speed / 1.73"></div></div><div class="gear-label">{{state().boost ? 'BOOST ACTIVE' : state().drift > 0 ? 'HOLD YOUR DRIFT' : 'ELECTRIC · ROADSTER'}}</div></section>
+    @if (state().drift > 0 || state().boost) { <section class="drift-indicator" [class.charged]="state().drift > .27" [class.supercharged]="state().drift > .67"><span>{{state().boost ? 'A LITTLE EXTRA.' : state().drift > .67 ? 'SUPER BOOST READY · RELEASE SPACE' : state().drift > .27 ? 'BOOST READY · RELEASE SPACE' : 'FIND YOUR FLOW'}}</span><div><i [style.width.%]="state().boost ? 100 : state().drift * 100"></i></div></section> }
+    @if (state().wrongWay) { <div class="wrong-way">Wrong way <span>Turn around or press R</span></div> }
+  </div>
+  @if (state().phase === 'countdown') { <section class="countdown" aria-live="assertive"><span class="eyebrow">FIND YOUR LINE</span><strong>{{state().countdown || 'GO'}}</strong><span>W / ↑ TO ACCELERATE</span></section> }
+  @if (state().phase === 'paused') { <div class="modal-backdrop"><section class="pause-panel"><span class="eyebrow">A MOMENT TO BREATHE</span><h2>Enjoy the view.</h2><p>The coast can wait.</p><button class="flat-primary" (click)="pause()">Keep driving <span>↗</span></button><button class="flat-secondary" (click)="start(state().mode)">Start again</button><button class="text-button" (click)="game?.menu()">Back to the coast</button><span class="pause-key">ESC TO RESUME</span></section></div> }
+  @if (state().phase === 'finished') { <div class="modal-backdrop"><section class="results-panel"><span class="eyebrow">THREE LAPS. ONE GOOD DAY.</span><h2>Beautifully driven.</h2><div class="finish-time">{{state().time}}<span>YOUR TOTAL TIME</span></div><div class="result-laps">@for (lap of state().laps; track $index) { <div><span>LAP 0{{$index + 1}}</span><strong>{{lap}}</strong></div> }</div><div class="personal-best"><span>PERSONAL BEST LAP</span><strong>{{state().best}}</strong></div><button class="flat-primary" (click)="start('trial')">One more run <span>↗</span></button><button class="flat-secondary" (click)="start('free')">Stay a little longer · Free drive</button><button class="text-button" (click)="game?.menu()">Main menu</button></section></div> }
+  @if (controls()) { <div class="modal-backdrop"><section class="controls-panel" role="dialog" aria-modal="true" aria-labelledby="controls-title"><button class="close-button" aria-label="Close controls" (click)="controls.set(false)">×</button><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="controls-title">A good drive<br>starts here.</h2><div class="control-row"><span>Accelerate</span><kbd>W / ↑</kbd></div><div class="control-row"><span>Brake / reverse</span><kbd>S / ↓</kbd></div><div class="control-row"><span>Steer</span><kbd>A D / ← →</kbd></div><div class="control-row"><span>Hold to drift</span><kbd>SPACE</kbd></div><div class="control-row"><span>Return to the road</span><kbd>R</kbd></div><div class="control-row"><span>Camera / sound / pause</span><kbd>C / M / ESC</kbd></div><p class="drift-tip">Carry speed into a turn, then hold Space while steering. Blue sparks mean your boost is ready. Hold longer for gold, and release Space to launch.</p><p class="gamepad-tip">Controller: RT accelerate · LT brake · left stick steer · A drift · Y reset · Start pause.</p><button class="flat-primary" (click)="controls.set(false)">Got it. Let's drive. <span>↗</span></button></section></div> }
+  @if (state().phase === 'error') { <div class="modal-backdrop"><section class="pause-panel"><span class="eyebrow">A SHORT DETOUR</span><h2>Let's try again.</h2><p>{{state().error}}</p><button class="flat-primary" (click)="reload()">Reload game <span>↗</span></button></section></div> }
+</main>
