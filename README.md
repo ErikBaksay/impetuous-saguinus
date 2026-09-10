@@ -2,6 +2,12 @@
 
 An original Mediterranean arcade driving game built with Angular 21 and Three.js. The first playable contains a cotton-top Saguinus in a pearl electric roadster, an approximately 840 m coastal circuit, three-lap time trials, and free driving.
 
+## Play
+
+The production build deploys to GitHub Pages from `main` via GitHub Actions:
+
+https://erikbaksay.github.io/impetuous-saguinus/
+
 ## Play locally
 
 ```sh

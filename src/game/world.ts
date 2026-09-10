@@ -137,7 +137,7 @@ export async function createWorld(scene: T.Scene, renderer: T.WebGLRenderer, tra
   scene.add(checker);
   const loader = new GLTFLoader(), names = ['saguinus-roadster', 'palm', 'villa', 'cypress', 'cliff', 'lighthouse', 'sailboat', 'wall', 'flower-urn'];
   let loaded = 0;
-  const models = await Promise.all(names.map(async name => { const gltf = await loader.loadAsync(`/models/${name}.glb`); progress(++loaded / names.length); return gltf.scene; }));
+  const models = await Promise.all(names.map(async name => { const gltf = await loader.loadAsync(new URL(`models/${name}.glb`, document.baseURI).href); progress(++loaded / names.length); return gltf.scene; }));
   const [player, palm, villa, cypress, cliff, lighthouse, sailboat, wall, urn] = models;
   player.traverse(o => { if (o instanceof T.Mesh) { o.castShadow = true; o.receiveShadow = true; } }); scene.add(player);
   const palms: Placement[] = [], villas: Placement[] = [], trees: Placement[] = [], cliffs: Placement[] = [], walls: Placement[] = [], urns: Placement[] = [];
