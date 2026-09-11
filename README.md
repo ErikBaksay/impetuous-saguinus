@@ -1,6 +1,6 @@
 # Impetuous Saguinus
 
-An original Mediterranean arcade driving game built with Angular 21 and Three.js. The first playable contains a cotton-top Saguinus in a pearl electric roadster, an approximately 840 m coastal circuit, three-lap time trials, and free driving.
+An original Mediterranean arcade driving game built with Angular 21 and Three.js. The first playable contains a cotton-top Saguinus in a pearl electric roadster, an approximately 840 m coastal circuit, three-lap AI races, time trials, and free driving.
 
 ## Play
 
@@ -24,7 +24,7 @@ Open http://localhost:4200. A desktop browser with WebGL 2 and hardware accelera
 - **Esc / P** pause. **M** toggle audio.
 - Standard gamepad: **RT** accelerate, **LT** brake, **left stick** steer, **A** drift, **Y** recover, **Start** pause.
 
-Time trials require ordered quarter-course checkpoints and three forward laps. Your best lap is stored locally in this browser. Recovering preserves race time and checkpoint requirements. Tab changes and window focus loss pause the game. Free driving has no finish condition.
+AI races and time trials require ordered quarter-course checkpoints and three forward laps. AI drivers overtake and can make contact while racing; the race includes five rivals and the player. Your best lap is stored locally in this browser for time trials only. Recovering preserves race time and checkpoint requirements. Tab changes and window focus loss pause the game. Free driving has no finish condition. There is no multiplayer.
 
 ## Source
 
@@ -66,6 +66,6 @@ Production files are written to `dist/impetuous-saguinus/browser`. Serve that di
 
 ## Current scope
 
-This is a first playable art and handling foundation. It includes no opponents, items, multiplayer, damage simulation, or character rigging. Character and scenery models are procedurally authored Blender assets; further sculpting, texture painting, animation, and track art can be developed in the included `.blend` file.
+This is a first playable art and handling foundation. It includes AI opponents in race mode, with no items, multiplayer, damage simulation, or character rigging. Character and scenery models are procedurally authored Blender assets; further sculpting, texture painting, animation, and track art can be developed in the included `.blend` file.
 
 Fonts: DM Sans and Italiana from the official Google Fonts repository, under the SIL Open Font License. License texts are included in `public/fonts`. All model geometry is original to this project; no Nintendo assets are included.

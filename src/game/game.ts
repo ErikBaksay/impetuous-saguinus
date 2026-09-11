@@ -7,14 +7,16 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { CoastTrack, ArcadeCar, LapTracker, damp, formatTime } from './track';
 import { createWorld, World } from './world';
 import { GameAudio } from './audio';
+import { RaceField, RaceStanding } from './race';
 
-export type GameMode = 'trial' | 'free';
+export type GameMode = 'trial' | 'free' | 'race';
 export type GamePhase = 'loading' | 'menu' | 'countdown' | 'driving' | 'paused' | 'finished' | 'error';
-export interface GameState { phase: GamePhase; mode: GameMode; loading: number; speed: number; lap: number; time: string; lapTime: string; best: string; countdown: number; drift: number; boost: boolean; wrongWay: boolean; sector: string; laps: string[]; muted: boolean; progress: number; error: string; gamepad: boolean }
-export const INITIAL_STATE: GameState = { phase: 'loading', mode: 'trial', loading: 0, speed: 0, lap: 1, time: '00:00.00', lapTime: '00:00.00', best: '—', countdown: 3, drift: 0, boost: false, wrongWay: false, sector: 'PORTO SOLE', laps: [], muted: false, progress: 0, error: '', gamepad: false };
+export interface GameState { phase: GamePhase; mode: GameMode; loading: number; speed: number; lap: number; time: string; lapTime: string; best: string; countdown: number; drift: number; boost: boolean; wrongWay: boolean; sector: string; laps: string[]; muted: boolean; progress: number; error: string; gamepad: boolean; position: number; totalRacers: number; standings: RaceStanding[] }
+export const INITIAL_STATE: GameState = { phase: 'loading', mode: 'trial', loading: 0, speed: 0, lap: 1, time: '00:00.00', lapTime: '00:00.00', best: '—', countdown: 3, drift: 0, boost: false, wrongWay: false, sector: 'PORTO SOLE', laps: [], muted: false, progress: 0, error: '', gamepad: false, position: 1, totalRacers: 1, standings: [] };
 
 export class DrivingGame {
   readonly track = new CoastTrack(); readonly car = new ArcadeCar(this.track); readonly laps = new LapTracker();
+  readonly race = new RaceField(this.track, this.car, this.laps);
   state: GameState = { ...INITIAL_STATE }; readonly audio = new GameAudio();
   private readonly scene = new T.Scene(); private readonly camera = new T.PerspectiveCamera(51, 1, .1, 3500);
   private renderer!: T.WebGLRenderer; private composer!: EffectComposer; private world?: World;
@@ -22,6 +24,7 @@ export class DrivingGame {
   private raceTime = 0; private lapStartTime = 0; private countdownTime = 3; private lastCount = 3;
   private savedPhase: GamePhase = 'driving'; private bestLap: number | null = null; private hudTimer = 0;
   private cameraStyle = 0; private look = new T.Vector3(); private wheelPivots: T.Object3D[] = []; private wheelSpins: T.Object3D[] = []; private wheelAngle = 0;
+  private rivalVisuals: { model: T.Group; pivots: T.Object3D[]; spins: T.Object3D[] }[] = [];
   private disposed = false; private gamepadPause = false; private gamepadReset = false;
   private readonly sparksGeo = new T.BufferGeometry(); private readonly sparksPos = new Float32Array(240 * 3);
   private readonly sparksLife = new Float32Array(240); private readonly sparksVelocity = new Float32Array(240 * 3);
@@ -48,6 +51,22 @@ export class DrivingGame {
       this.world = await createWorld(this.scene, this.renderer, this.track, n => { this.state.loading = Math.round(n * 100); this.publish(); });
       if (this.disposed) { this.world.dispose(); return; }
       this.world.player.traverse(o => { if (/^Wheel_[FR][LR]$/.test(o.name)) this.wheelPivots.push(o); if (/^WheelSpin_[FR][LR]$/.test(o.name)) this.wheelSpins.push(o); });
+      this.rivalVisuals = this.race.opponents.map(driver => {
+        const model = this.world!.player.clone(true), pivots: T.Object3D[] = [], spins: T.Object3D[] = [];
+        const paint = new Map<T.Material, T.Material>();
+        const tint = (material: T.Material): T.Material => {
+          if (!(material instanceof T.MeshStandardMaterial) || !material.name.includes('Porcelain pearl')) return material;
+          if (!paint.has(material)) { const copy = material.clone(); copy.color.set(driver.profile.color); paint.set(material, copy); }
+          return paint.get(material)!;
+        };
+        model.traverse(o => {
+          if (o instanceof T.Mesh) o.material = Array.isArray(o.material) ? o.material.map(tint) : tint(o.material);
+          if (/^Wheel_[FR][LR]$/.test(o.name)) pivots.push(o);
+          if (/^WheelSpin_[FR][LR]$/.test(o.name)) spins.push(o);
+        });
+        model.name = `Rival_${driver.profile.id}`; model.visible = false; this.scene.add(model);
+        return { model, pivots, spins };
+      });
       this.sparksPos.fill(-10000); this.sparksGeo.setAttribute('position', new T.BufferAttribute(this.sparksPos, 3));
       this.sparkMesh = new T.Points(this.sparksGeo, new T.PointsMaterial({ color: 0x66dfff, size: .115, transparent: true, opacity: .95, blending: T.AdditiveBlending, depthWrite: false })); this.sparkMesh.frustumCulled = false; this.scene.add(this.sparkMesh);
       this.state.phase = 'menu'; this.syncPlayer(); this.updateCamera(1, true); this.publish(); this.frameId = requestAnimationFrame(this.frame);
@@ -57,19 +76,20 @@ export class DrivingGame {
   }
   start(mode: GameMode): void {
     if (!this.world) return; this.audio.start(); this.keys.clear(); this.car.reset(0); this.laps.reset(); this.raceTime = this.lapStartTime = this.wheelAngle = 0; this.countdownTime = 3.5; this.lastCount = 4;
-    this.state = { ...this.state, mode, phase: mode === 'trial' ? 'countdown' : 'driving', laps: [], lap: 1, time: '00:00.00', lapTime: '00:00.00', speed: 0, countdown: 3, wrongWay: false, boost: false, drift: 0 };
-    this.syncPlayer(); this.updateCamera(1, true); this.publish();
+    if (mode === 'race') this.race.reset();
+    this.state = { ...this.state, mode, phase: mode === 'free' ? 'driving' : 'countdown', laps: [], lap: 1, time: '00:00.00', lapTime: '00:00.00', speed: 0, countdown: 3, wrongWay: false, boost: false, drift: 0, progress: this.car.progress, position: 1, totalRacers: 1, standings: [] };
+    this.updateStandings(); this.syncPlayer(); this.syncRivals(); this.updateCamera(1, true); this.drawMap(); this.publish();
   }
   pause(): void {
     if (this.state.phase === 'paused') { this.state.phase = this.savedPhase; this.audio.start(); }
     else if (this.state.phase === 'driving' || this.state.phase === 'countdown') { this.savedPhase = this.state.phase; this.state.phase = 'paused'; }
     this.keys.clear(); this.publish();
   }
-  menu(): void { this.keys.clear(); this.state.phase = 'menu'; this.car.reset(0); this.state.speed = 0; this.publish(); }
+  menu(): void { this.keys.clear(); this.state.phase = 'menu'; this.car.reset(0); this.state.speed = 0; this.syncRivals(); this.publish(); }
   resetCar(): void { if (this.state.phase !== 'driving') return; this.car.reset(); this.laps.reposition(this.car.progress); this.syncPlayer(); this.updateCamera(1, true); }
   toggleAudio(): void { this.state.muted = this.audio.toggle(); this.publish(); }
   changeCamera(): void { this.cameraStyle = (this.cameraStyle + 1) % 2; }
-  private publish(): void { this.emit({ ...this.state, laps: [...this.state.laps] }); }
+  private publish(): void { this.emit({ ...this.state, laps: [...this.state.laps], standings: [...this.state.standings] }); }
   private keyDown = (e: KeyboardEvent): void => {
     if (e.target instanceof HTMLButtonElement && (e.code === 'Space' || e.code === 'Enter')) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -108,13 +128,15 @@ export class DrivingGame {
       this.wheelAngle = (this.wheelAngle + this.car.speed * dt / .53) % (Math.PI * 2);
       this.raceTime += dt;
       const tangent = this.track.tangent(this.car.progress), movingForward = this.car.speed > 0 && Math.sin(this.car.heading) * tangent.x + Math.cos(this.car.heading) * tangent.z > 0;
-      if (this.state.mode === 'trial' && this.laps.sample(this.car.progress, movingForward)) {
+      const crossed = this.state.mode === 'race' ? this.race.step(dt, this.raceTime) : this.state.mode === 'trial' && this.laps.sample(this.car.progress, movingForward);
+      if (crossed) {
+        if (this.state.mode === 'race' && this.race.player.finishTime !== null) this.raceTime = this.race.player.finishTime;
         const lapTime = this.raceTime - this.lapStartTime; this.lapStartTime = this.raceTime; this.state.laps.push(formatTime(lapTime)); this.audio.chime(true);
-        if (this.bestLap === null || lapTime < this.bestLap) { this.bestLap = lapTime; this.state.best = formatTime(lapTime); try { localStorage.setItem('saguinus.riviera.v1.best', String(lapTime)); } catch { /* Continue without persistence. */ } }
-        if (this.laps.completed) { this.state.phase = 'finished'; this.keys.clear(); }
+        if (this.state.mode === 'trial' && (this.bestLap === null || lapTime < this.bestLap)) { this.bestLap = lapTime; this.state.best = formatTime(lapTime); try { localStorage.setItem('saguinus.riviera.v1.best', String(lapTime)); } catch { /* Continue without persistence. */ } }
+        if (this.laps.completed) { this.state.phase = 'finished'; this.keys.clear(); this.hudTimer = 1; }
       }
     }
-    this.syncPlayer(); this.updateCamera(dt);
+    this.syncPlayer(); this.syncRivals(); this.updateCamera(dt);
     const animateWorld = this.state.phase !== 'paused';
     if (animateWorld) { this.world.water.uniforms['time'].value += dt; this.world.boats.forEach((b, i) => { b.rotation.z = Math.sin(this.totalTime * .55 + i) * .018; b.position.y = -1.05 + Math.sin(this.totalTime * .72 + i * 2) * .09; }); }
     const sunDirection = new T.Vector3(-.67, .17, .72).normalize(); this.world.sun.target.position.set(this.car.x, this.car.y, this.car.z); this.world.sun.position.copy(this.world.sun.target.position).addScaledVector(sunDirection, 170);
@@ -122,7 +144,7 @@ export class DrivingGame {
     this.hudTimer += dt;
     if (this.hudTimer > .065) {
       this.hudTimer = 0; this.state.speed = Math.round(Math.abs(this.car.speed) * 3.6); this.state.lap = Math.min(3, this.laps.lap); this.state.time = formatTime(this.raceTime); this.state.lapTime = formatTime(this.raceTime - this.lapStartTime); this.state.drift = this.car.driftCharge / 2.4; this.state.boost = this.car.boostTime > 0; this.state.wrongWay = this.car.wrongWay; this.state.progress = this.car.progress;
-      this.state.sector = this.car.progress < .2 || this.car.progress > .79 ? 'PORTO SOLE' : this.car.progress < .43 ? 'THE LIGHTHOUSE BEND' : this.car.progress < .7 ? 'CYPRESS HEIGHTS' : 'RIVIERA DESCENT'; this.drawMap(); this.publish();
+      this.state.sector = this.car.progress < .2 || this.car.progress > .79 ? 'PORTO SOLE' : this.car.progress < .43 ? 'THE LIGHTHOUSE BEND' : this.car.progress < .7 ? 'CYPRESS HEIGHTS' : 'RIVIERA DESCENT'; this.updateStandings(); this.drawMap(); this.publish();
     }
   }
   private syncPlayer(): void {
@@ -130,6 +152,22 @@ export class DrivingGame {
     const tangent = this.track.tangent(this.car.progress); this.world.player.rotation.x = -Math.asin(tangent.y);
     for (const pivot of this.wheelPivots) if (pivot.name.includes('_F')) pivot.rotation.y = -this.car.steering * .3;
     for (const wheel of this.wheelSpins) wheel.rotation.x = this.wheelAngle;
+  }
+  private syncRivals(): void {
+    this.rivalVisuals.forEach((visual, index) => {
+      visual.model.visible = this.state.mode === 'race' && ['countdown', 'driving', 'paused', 'finished'].includes(this.state.phase);
+      if (!visual.model.visible) return;
+      const driver = this.race.opponents[index], car = driver.car;
+      visual.model.position.set(car.x, car.y, car.z);
+      visual.model.rotation.set(-Math.asin(this.track.tangent(car.progress).y), car.heading, car.steering * car.speed * .0008);
+      for (const pivot of visual.pivots) if (pivot.name.includes('_F')) pivot.rotation.y = -car.steering * .3;
+      for (const wheel of visual.spins) wheel.rotation.x = driver.wheelAngle;
+    });
+  }
+  private updateStandings(): void {
+    if (this.state.mode !== 'race') return;
+    this.state.standings = this.race.standings(); this.state.totalRacers = this.state.standings.length;
+    this.state.position = this.state.standings.find(driver => driver.player)!.position;
   }
   private updateCamera(dt: number, instant = false): void {
     const p = new T.Vector3(this.car.x, this.car.y, this.car.z), target = p.clone(); let desired: T.Vector3;
@@ -167,6 +205,10 @@ export class DrivingGame {
     ctx.clearRect(0, 0, w, h); ctx.lineJoin = ctx.lineCap = 'round'; ctx.beginPath();
     this.track.points.forEach((p, i) => { const x = w / 2 + p.x * scale, y = h / 2 + p.z * scale; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }); ctx.closePath(); ctx.lineWidth = 12; ctx.strokeStyle = '#122d31aa'; ctx.stroke(); ctx.lineWidth = 4; ctx.strokeStyle = '#fffae0cc'; ctx.stroke();
     const s = this.track.point(0); ctx.fillStyle = '#efc285'; ctx.fillRect(w / 2 + s.x * scale - 4, h / 2 + s.z * scale - 4, 8, 8);
+    if (this.state.mode === 'race') for (const driver of this.race.opponents) {
+      ctx.beginPath(); ctx.arc(w / 2 + driver.car.x * scale, h / 2 + driver.car.z * scale, 5, 0, Math.PI * 2);
+      ctx.fillStyle = driver.profile.color; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#122d31'; ctx.stroke();
+    }
     ctx.save(); ctx.translate(w / 2 + this.car.x * scale, h / 2 + this.car.z * scale); ctx.rotate(-this.car.heading); ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(-6, -6); ctx.lineTo(6, -6); ctx.closePath(); ctx.fillStyle = '#ffbe79'; ctx.shadowColor = '#ffba79'; ctx.shadowBlur = 12; ctx.fill(); ctx.restore();
   }
   dispose(): void {
