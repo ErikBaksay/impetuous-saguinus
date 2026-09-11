@@ -37,7 +37,8 @@ AI races and time trials require ordered quarter-course checkpoints and three fo
 - `blender/roadster.py`: reference-based pearl roadster, with a sculpted shell, recessed cockpit, five-spoke wheels and LED lights.
 - `blender/preview_roadster.py`: studio render of the car without the game driver, saved to `blender/previews/roadster.png`.
 - `blender/impetuous-saguinus.blend`: editable source asset atelier.
-- `public/models/`: nine original Blender GLB assets, including the driver and roadster.
+- `blender/vegetation.py` and `blender/vegetation.blend`: editable Mediterranean nursery, with pinnate palms, cypresses, coastal shrubs, bougainvillea, climbing vines, grasses and olive trees.
+- `public/models/`: fourteen original Blender GLB assets, including the driver and roadster. Vegetation uses opaque vertex colours and shared instanced meshes.
 
 The script creates its own named scene and preserves unrelated Blender scenes. Change `ROOT` if moving this project. To regenerate via the Blender MCP, execute:
 
@@ -54,6 +55,15 @@ runpy.run_path(root + '/blender/roadster.py')['update_atelier'](root)
 ```
 
 The game loads `public/models/saguinus-roadster.glb`. Its four `Wheel_FL/FR/RL/RR` nodes steer; their `WheelSpin_FL/FR/RL/RR` children roll independently at a 0.53 m tire radius. Blender uses Z up and −Y forward; GLB export converts this to the game's Y up and +Z forward. The editable `Roadster • Studio` scene is excluded from the game export.
+
+To rebuild only the planting kit through the Blender MCP:
+
+```python
+import runpy
+runpy.run_path('/absolute/project/path/blender/vegetation.py')['build']()
+```
+
+The nursery saves to `blender/vegetation.blend`; the full asset build also runs it. Roadside planting is seeded and grounded against the terrain. Shrubs and flowers frame the road, vines follow villa transforms, and mixed groves fill the inland terraces. Plant meshes are batched by material with no per-frame vegetation work.
 
 ## Verification
 

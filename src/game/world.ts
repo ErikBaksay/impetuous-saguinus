@@ -79,28 +79,31 @@ function island(track: CoastTrack): T.Mesh {
 }
 
 interface Placement { p: T.Vector3; yaw?: number; scale?: number | T.Vector3; tint?: T.Color }
-function instanceAsset(scene: T.Scene, model: T.Group, placements: Placement[], castShadow = true): void {
+function instanceAsset(scene: T.Scene, model: T.Group, placements: Placement[], castShadow = true, name = model.name): T.InstancedMesh[] {
+  if (!placements.length) return [];
   const pieces = new Map<T.Material, T.BufferGeometry[]>();
   model.updateMatrixWorld(true);
   model.traverse(o => {
     if (!(o instanceof T.Mesh)) return;
     const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
-    for (const key of Object.keys(g.attributes)) if (key !== 'position' && key !== 'normal') g.deleteAttribute(key);
+    for (const key of Object.keys(g.attributes)) if (key !== 'position' && key !== 'normal' && key !== 'color') g.deleteAttribute(key);
     const geometry = g.index ? g.toNonIndexed() : g;
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
     if (!pieces.has(m)) pieces.set(m, []); pieces.get(m)!.push(geometry);
   });
-  const dummy = new T.Object3D();
+  const dummy = new T.Object3D(), meshes: T.InstancedMesh[] = [];
   for (const [material, geometries] of pieces) {
     const geometry = mergeGeometries(geometries)!;
     const instances = new T.InstancedMesh(geometry, material, placements.length);
+    instances.name = `${name}/${material.name || meshes.length}`;
     placements.forEach((p, i) => {
       dummy.position.copy(p.p); dummy.rotation.set(0, p.yaw ?? 0, 0); typeof p.scale === 'object' ? dummy.scale.copy(p.scale) : dummy.scale.setScalar(p.scale ?? 1); dummy.updateMatrix(); instances.setMatrixAt(i, dummy.matrix);
       if (p.tint) instances.setColorAt(i, p.tint);
     });
-    instances.castShadow = castShadow; instances.receiveShadow = true; instances.computeBoundingSphere(); scene.add(instances);
+    instances.castShadow = castShadow; instances.receiveShadow = true; instances.computeBoundingSphere(); scene.add(instances); meshes.push(instances);
     geometries.forEach(g => g.dispose());
   }
+  return meshes;
 }
 
 export async function createWorld(scene: T.Scene, renderer: T.WebGLRenderer, track: CoastTrack, progress: (n: number) => void): Promise<World> {
@@ -116,9 +119,9 @@ export async function createWorld(scene: T.Scene, renderer: T.WebGLRenderer, tra
   const pmrem = new T.PMREMGenerator(renderer); const env = pmrem.fromScene(environment, .025, .1, 4000); scene.environment = env.texture; scene.environmentIntensity = .48; pmrem.dispose();
   const water = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, sunDirection: { value: sunDirection } }, vertexShader: waterVertex, fragmentShader: waterFragment });
   const sea = new T.Mesh(new T.PlaneGeometry(5000, 5000, 220, 220), water); sea.rotation.x = -Math.PI / 2; sea.position.y = -1.3; scene.add(sea);
-  scene.add(island(track));
+  const islandGround = island(track); islandGround.name = 'island-ground'; scene.add(islandGround);
   const rockMat = new T.MeshStandardMaterial({ color: 0xb6a085, roughness: 1, side: T.DoubleSide });
-  scene.add(ribbon(track, [-35, -24, -14, -8.2], [-28, -12, -1, -.18], rockMat));
+  const coastalGround = ribbon(track, [-35, -24, -14, -8.2], [-28, -12, -1, -.18], rockMat); coastalGround.name = 'coastal-ground'; scene.add(coastalGround);
   const asphalt = new T.MeshStandardMaterial({ color: 0x6c7274, roughness: .84, map: noiseTexture(), side: T.DoubleSide });
   scene.add(ribbon(track, [-ROAD_HALF_WIDTH, ROAD_HALF_WIDTH], [0, 0], asphalt));
   const curbMat = new T.MeshStandardMaterial({ color: 0xdbccae, roughness: .9, side: T.DoubleSide });
@@ -135,10 +138,14 @@ export async function createWorld(scene: T.Scene, renderer: T.WebGLRenderer, tra
     const i = row * 16 + col; dummy.position.copy(start).addScaledVector(normal, (col - 7.5) * .81).addScaledVector(tangent, row * .72 + 2.7); dummy.position.y += .055; dummy.rotation.set(-Math.PI / 2, 0, -Math.atan2(tangent.x, tangent.z)); dummy.updateMatrix(); checker.setMatrixAt(i, dummy.matrix); checker.setColorAt(i, color((row + col) % 2 ? 0x343f3e : 0xe5dec5));
   }
   scene.add(checker);
-  const loader = new GLTFLoader(), names = ['saguinus-roadster', 'palm', 'villa', 'cypress', 'cliff', 'lighthouse', 'sailboat', 'wall', 'flower-urn'];
+  const loader = new GLTFLoader(), names = ['saguinus-roadster', 'palm', 'villa', 'cypress', 'cliff', 'lighthouse', 'sailboat', 'wall', 'flower-urn', 'coastal-shrub', 'bougainvillea', 'flowering-vine', 'coastal-grass', 'olive-tree'];
   let loaded = 0;
   const models = await Promise.all(names.map(async name => { const gltf = await loader.loadAsync(new URL(`models/${name}.glb`, document.baseURI).href); progress(++loaded / names.length); return gltf.scene; }));
-  const [player, palm, villa, cypress, cliff, lighthouse, sailboat, wall, urn] = models;
+  const [player, palm, villa, cypress, cliff, lighthouse, sailboat, wall, urn, shrub, bougainvillea, floweringVine, grass, olive] = models;
+  // Replace the villa's original sphere-cluster flowers with the detailed garden kit.
+  const oldVillaFlowers: T.Object3D[] = [];
+  villa.traverse(o => { if (o instanceof T.Mesh && /^(Bougainvillea_leaves|Flower_cluster)/.test(o.name)) oldVillaFlowers.push(o); });
+  oldVillaFlowers.forEach(o => o.removeFromParent());
   player.traverse(o => { if (o instanceof T.Mesh) { o.castShadow = true; o.receiveShadow = true; } }); scene.add(player);
   const palms: Placement[] = [], villas: Placement[] = [], trees: Placement[] = [], cliffs: Placement[] = [], walls: Placement[] = [], urns: Placement[] = [];
   for (let i = 0; i < 260; i++) {
@@ -160,15 +167,105 @@ export async function createWorld(scene: T.Scene, renderer: T.WebGLRenderer, tra
     const t = random(), p = track.point(t), n = track.normal(t); const inset = 14 + random() * 18; p.addScaledVector(n, inset); p.y += (inset - 8) * .17;
     trees.push({ p, yaw: random() * 6.28, scale: .9 + random() * 1.1 });
   }
-  instanceAsset(scene, palm, palms); instanceAsset(scene, villa, villas); instanceAsset(scene, cypress, trees); instanceAsset(scene, cliff, cliffs, false); instanceAsset(scene, wall, walls); instanceAsset(scene, urn, urns);
+  // Vegetation has its own seed so adding garden details cannot move villas or boats.
+  let vegetationSeed = 84179;
+  const plantRandom = () => { vegetationSeed = (vegetationSeed * 1664525 + 1013904223) >>> 0; return vegetationSeed / 4294967296; };
+  const groundSurfaces: T.Object3D[] = [islandGround, coastalGround];
+  groundSurfaces.forEach(surface => surface.updateMatrixWorld(true));
+  const groundRay = new T.Raycaster(new T.Vector3(), new T.Vector3(0, -1, 0), 0, 400);
+  const groundPlant = (p: T.Vector3, surfaces = groundSurfaces): boolean => {
+    groundRay.ray.origin.set(p.x, 200, p.z);
+    const hit = groundRay.intersectObjects(surfaces, false)[0];
+    if (!hit || hit.point.y < -1) return false;
+    p.y = hit.point.y; return true;
+  };
+  const villaScale = (v: Placement) => v.scale instanceof T.Vector3 ? v.scale : new T.Vector3().setScalar(v.scale ?? 1);
+  const inVillaGarden = (p: T.Vector3, radius: number) => villas.some(v => {
+    const yaw = v.yaw ?? 0, dx = p.x - v.p.x, dz = p.z - v.p.z, s = villaScale(v);
+    return Math.abs(Math.cos(yaw) * dx - Math.sin(yaw) * dz) < 3.3 * s.x + radius
+      && Math.abs(Math.sin(yaw) * dx + Math.cos(yaw) * dz) < 2.9 * s.z + radius;
+  });
+  const shrubs: Placement[] = [], flowers: Placement[] = [], grasses: Placement[] = [], olives: Placement[] = [], vines: Placement[] = [];
+  const addPlant = (placements: Placement[], p: T.Vector3, scale: number, radius: number, surfaces = groundSurfaces, avoidVillas = true) => {
+    if (Math.abs(track.nearest(p.x, p.z).lateral) < ROAD_HALF_WIDTH + radius * scale + .45
+      || (avoidVillas && inVillaGarden(p, radius * scale)) || !groundPlant(p, surfaces)) return;
+    placements.push({ p, yaw: plantRandom() * Math.PI * 2, scale, tint: new T.Color().setHSL(.12, .05 + plantRandom() * .09, .83 + plantRandom() * .15) });
+  };
+  // Ground the replacement trees and stagger their trunks within the existing verge.
+  for (const placement of palms) {
+    const road = track.nearest(placement.p.x, placement.p.z);
+    placement.p.addScaledVector(track.tangent(road.t), (plantRandom() - .5) * 4);
+    if (road.lateral > 0) placement.p.addScaledVector(road.normal, plantRandom() * 2);
+    groundPlant(placement.p);
+  }
+  trees.forEach(placement => groundPlant(placement.p));
+  // Low planting follows the inside curb, with flower-rich pockets around the village.
+  for (let i = 0; i < 240; i++) {
+    const t = (i + plantRandom() * .8) / 240, p = track.point(t), n = track.normal(t), d = track.tangent(t);
+    const village = t < .23 || t > .72;
+    addPlant(shrubs, p.clone().addScaledVector(n, 9.35 + plantRandom() * 1.3), .82 + plantRandom() * .35, 1.15);
+    if (i % 2 === 0) addPlant(grasses, p.clone().addScaledVector(n, 8.85 + plantRandom() * .75).addScaledVector(d, 1.1), .7 + plantRandom() * .3, .55);
+    if (village ? i % 3 !== 2 : i % 9 === 0) addPlant(flowers, p.clone().addScaledVector(n, 9.2 + plantRandom() * .75).addScaledVector(d, -1.2), .8 + plantRandom() * .25, 1.25);
+    if (i % 16 === 0) addPlant(palms, p.clone().addScaledVector(n, 12.5 + plantRandom() * 3).addScaledVector(d, 3), .86 + plantRandom() * .25, .55);
+  }
+  // Keep the sea visible above a broken ribbon of shrubs and wall-spilling blossoms.
+  for (let i = 0; i < 90; i++) {
+    const t = (i + plantRandom() * .8) / 90, p = track.point(t), n = track.normal(t), d = track.tangent(t);
+    addPlant(shrubs, p.clone().addScaledVector(n, -10.1 - plantRandom() * 2.5), .62 + plantRandom() * .35, 1.15);
+    if (i % 2 === 0) addPlant(grasses, p.clone().addScaledVector(n, -9.4).addScaledVector(d, 1.4), .65 + plantRandom() * .25, .55);
+    if (i % 3 === 0 && (t < .27 || t > .7)) addPlant(flowers, p.clone().addScaledVector(n, -8.8).addScaledVector(d, -.9), .78 + plantRandom() * .22, 1.25);
+  }
+  // Vine anchors use the same rotation and scale as their villa's front/side walls.
+  const up = new T.Vector3(0, 1, 0);
+  villas.forEach((v, i) => {
+    const s = villaScale(v), yaw = v.yaw ?? 0, side = i % 2 ? -1 : 1;
+    const localPoint = (x: number, z: number) => new T.Vector3(x * s.x, 0, z * s.z).applyAxisAngle(up, yaw).add(v.p);
+    addPlant(flowers, localPoint(side * 3.85, 4.1), .84 + plantRandom() * .3, 1.25);
+    addPlant(shrubs, localPoint(-side * 4.5, .8), .8 + plantRandom() * .35, 1.15);
+    const attachVine = (x: number, z: number, turn: number) => {
+      const p = localPoint(x, z);
+      if (!groundPlant(p)) return;
+      const height = v.p.y + 6.25 * s.y - p.y;
+      if (height < 1.8) return;
+      vines.push({ p, yaw: yaw + turn, scale: new T.Vector3(.8 * s.x, Math.min(1.5, height / 4.7), 1) });
+    };
+    attachVine(-2.4, 2.6, 0);
+    if (i % 2 === 0) attachVine(3.12, -.7, Math.PI / 2);
+  });
+  // Irregular olive groves break up the inland slopes without filling the sea horizon.
+  for (let i = 0; i < 36; i++) {
+    const t = (i + plantRandom() * .85) / 36, p = track.point(t), n = track.normal(t), d = track.tangent(t);
+    p.addScaledVector(n, 25 + plantRandom() * 42);
+    addPlant(olives, p, .8 + plantRandom() * .35, 2.1);
+    addPlant(shrubs, p.clone().addScaledVector(d, 2.5).addScaledVector(n, 1.5), .95 + plantRandom() * .35, 1.15);
+    addPlant(grasses, p.clone().addScaledVector(d, -2), .85 + plantRandom() * .3, .55);
+  }
+  instanceAsset(scene, palm, palms, true, 'vegetation/palm'); instanceAsset(scene, villa, villas); instanceAsset(scene, cypress, trees, true, 'vegetation/cypress'); instanceAsset(scene, cliff, cliffs, false); instanceAsset(scene, wall, walls); instanceAsset(scene, urn, urns);
   // A separate lighthouse promontory across the bay.
   const lighthouseP = new T.Vector3(206, 9, 152);
-  instanceAsset(scene, cliff, [{ p: new T.Vector3(205, -4, 154), scale: new T.Vector3(8, 4, 7) }], false);
+  const promontoryGround = instanceAsset(scene, cliff, [{ p: new T.Vector3(205, -4, 154), scale: new T.Vector3(8, 4, 7) }], false, 'lighthouse-cliff');
   instanceAsset(scene, lighthouse, [{ p: lighthouseP, scale: 1.5 }, { p: new T.Vector3(-112, 9, 182), scale: 1.5 }]);
-  instanceAsset(scene, cliff, [{ p: new T.Vector3(-112, -4, 182), scale: new T.Vector3(7, 4, 6) }], false);
+  const westPromontoryGround = instanceAsset(scene, cliff, [{ p: new T.Vector3(-112, -4, 182), scale: new T.Vector3(7, 4, 6) }], false, 'west-lighthouse-cliff');
   instanceAsset(scene, villa, [{ p: new T.Vector3(-99, 8, 184), scale: .75, yaw: -.8 }]);
   instanceAsset(scene, villa, [{ p: new T.Vector3(194, 9, 151), scale: .8, yaw: 1.4 }]);
-  instanceAsset(scene, cypress, Array.from({ length: 10 }, (_, i) => ({ p: new T.Vector3(189 + random() * 27, 8, 147 + random() * 10), scale: .8 + random() * .7 })));
+  const lighthouseTrees = Array.from({ length: 10 }, () => ({ p: new T.Vector3(189 + random() * 27, 8, 147 + random() * 10), scale: .8 + random() * .7 }));
+  const lighthouseSurfaces = [...promontoryGround, ...westPromontoryGround];
+  lighthouseSurfaces.forEach(surface => surface.updateMatrixWorld(true));
+  instanceAsset(scene, cypress, lighthouseTrees.filter(placement => groundPlant(placement.p, lighthouseSurfaces)), true, 'vegetation/lighthouse-cypress');
+  for (const [x, z, rx, rz] of [[205, 154, 20, 10], [-112, 182, 16, 8]]) {
+    for (let i = 0; i < 26; i++) {
+      const angle = i / 26 * Math.PI * 2, r = .45 + plantRandom() * .5;
+      const p = new T.Vector3(x + Math.cos(angle) * rx * r, 0, z + Math.sin(angle) * rz * r);
+      // Leave room around the tower and its house, including their access area.
+      if ((p.x - x) ** 2 + (p.z - z) ** 2 < 22 || (p.x < x - 6 && Math.abs(p.z - z) < 5)) continue;
+      addPlant(shrubs, p, .85 + plantRandom() * .6, 1.15, lighthouseSurfaces, false);
+    }
+  }
+  instanceAsset(scene, shrub, shrubs, true, 'vegetation/coastal-shrub');
+  instanceAsset(scene, bougainvillea, flowers, true, 'vegetation/bougainvillea');
+  instanceAsset(scene, floweringVine, vines, true, 'vegetation/flowering-vine');
+  instanceAsset(scene, grass, grasses, false, 'vegetation/coastal-grass');
+  instanceAsset(scene, olive, olives, true, 'vegetation/olive-tree');
   const boats: T.Group[] = [];
   for (const [x, z, scale] of [[74, 176, 1.4], [133, 214, 1.8], [-30, 204, 1.5], [280, 78, 2], [16, 275, 1.8], [273, 210, 1.5]]) {
     const b = sailboat.clone(true); b.position.set(x, -1.05, z); b.scale.setScalar(scale); b.rotation.y = -.3 + random() * 1.7; scene.add(b); boats.push(b);

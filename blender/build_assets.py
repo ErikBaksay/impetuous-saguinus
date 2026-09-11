@@ -244,3 +244,5 @@ for o in scene.objects:
     if o.get('asset')=='saguinus-roadster':o.hide_set(False)
 bpy.ops.wm.save_as_mainfile(filepath=ROOT+'/blender/impetuous-saguinus.blend')
 print('ASSET_EXPORTS',exports)
+# The dedicated nursery supplies the current palms/cypresses and planting kit.
+runpy.run_path(ROOT + '/blender/vegetation.py')['build']()
